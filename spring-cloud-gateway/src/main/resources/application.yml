@@ -1,0 +1,92 @@
+server:
+  port: 9023
+#  servlet:
+#    context-path: /${spring.application.name}
+spring:
+  application:
+    name: spring-cloud-gateway
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    database: 0
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true #默认值为 true，即默认开启从注册中心动态创建路由的功能，利用微服务名进行路由
+          lower-case-service-id: true
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: '*'
+#              - http://localhost:8080
+#              - http://127.0.0.1:8080
+            allowed-headers: '*'
+            allowCredentials: true
+            allowed-methods:
+              - GET
+              - POST
+              - DELETE
+              - PUT
+              - OPTIONS
+      routes:
+        - id : eureka_provider #路由 id,没有固定规则，但唯一，建议与服务名对应
+          uri: lb://EUREKA-PROVIDER #动态路由，使用服务名代替上面的具体带端口   http://EUREKA-PROVIDER:8765/
+          predicates:
+            - Path=/spring-cloud-provider/**  #断言，路径匹配 注意：Path 中 P 为大写
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@apiKeyResolver}"
+                redis-rate-limiter.replenishRate: 10 # 令牌桶填充的速率 秒为单位
+                redis-rate-limiter.burstCapacity: 100 # 令牌桶总容量
+                redis-rate-limiter.requestedTokens: 10 # 每次请求获取的令牌数
+        - id: eureka_consumer
+          uri: lb://EUREKA-CONSUMER
+          predicates:
+            - Path=/spring-cloud-consumer/**
+          filters:
+            - StripPrefix=1
+      #默认过滤器（对所有route均生效）
+      default-filters:
+        #hystrix熔断进行限流策略
+        - name: Hystrix
+          args:
+            name: fallbackcmdABC
+            fallbackUri: forward:/fallbackcontroller
+        #请求限速配置 (其次配置限流的Filter配置信息，允许配置全局过滤器对所有的route生效，也可以根据需求对每个route进行单独配置)
+#        - name: RequestRateLimiter
+#          args:
+#            #如果keyResolver返回空key，则拒绝该请求403，默认true表示拒绝，false则表示允许访问
+#            deny-empty-key: false
+#            redis-rate-limiter.replenishRate: 1 #发送令牌的速率
+#            redis-rate-limiter.burstCapacity : 3 #令牌桶的容量
+#            reids-rate-limiter.requestedTokens: 1 #每个请求耗费的令牌数
+#            key-resolver : '#{@ipKeyResolver}' #如上所示是配置的一个spring bean的名称，如果没有配置则会获取到KeyResolver的默认实现PrincipalNameKeyResolver，并且访问接口都会返回 http 403状态码（与下面的deny-empty-key值相关）
+hystrix:
+  command:
+    fallbackcmdABC:
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds : 5000 #配置hystrix的超时时间
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    serviceUrl:
+      defaultZone: http://jerry:jerry2022@localhost:8761/eureka/
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  file:
+    path: /data/logs/${spring.application.name}
+  config: classpath:logback-spring.xml
